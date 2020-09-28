@@ -1,9 +1,15 @@
 #include <msp430.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+void setup(void);
 
 unsigned int t_read = 1878;
-float temperatura;
+float temperatura, temp;
 unsigned char flag = 1;
+unsigned int f=0, i=0;
+char c[50]; //size of the number
 
 #define CALADC12_15V_30C  *((unsigned int *)0x1A1A)
 #define CALADC12_15V_85C  *((unsigned int *)0x1A1C)
@@ -14,33 +20,7 @@ unsigned char flag = 1;
 int main(void)
 {
     WDTCTL = WDTPW | WDTHOLD;   // stop watchdog timer
-
-    //porta UART
-    P4SEL = BIT4 + BIT5;
-      UCA1CTL1 |= UCSWRST;
-      UCA1CTL1 |= UCSSEL_2;
-      UCA1BR0 = 109;
-      UCA1BR1 = 0;
-      UCA1MCTL = UCBRS_2;
-      UCA1CTL1 &= ~UCSWRST;
-
-    //settaggio sensore di temperatura
-
-    REFCTL0 &= ~REFMSTR;        //disabilita riferimento di tensione da blocco REF
-
-    ADC12CTL0 = ADC12SHT0_8 + ADC12REFON + ADC12ON; //imposta tempo di sampling, abilita riferimento di tensione interno
-    ADC12CTL1 = ADC12SHP;                           //campionamento basato su timer ADC12
-    ADC12MCTL0 = ADC12SREF_1 + ADC12INCH_10;        //Vref-=0V, Vref+=1.5V, selezione canale analogico 10 (integrated Temp. sensor)
-    ADC12IE = 0x0001;                               //abilita interrupt corrispondente a ADC12IFG0
-
-    __delay_cycles(100);                            //ritardo per assestamento tensioni di riferimento
-
-    ADC12CTL0 |= ADC12ENC;                          //abilitazione blocco ADC
-
-    __enable_interrupt();                           //GIE = 1
-
-    int n;
-    string str;
+    setup();
     while(1){
         if(flag) {
             ADC12CTL0 &= ~ADC12SC;                  //produci fronte di salita bit SC (Start of Conversion)
@@ -50,12 +30,8 @@ int main(void)
 
         //calcola temperatura sulla base del valore rilevato dall'ADC (t_read)
         temperatura = (float)(((long)t_read - CALADC12_15V_30C) * (85 - 30)) / (CALADC12_15V_85C - CALADC12_15V_30C) + 30.0;
-       str=to_string(temperatura)+'\0';
-        int i=0;
-        while (str[i]!='\0'){
-            while (!(UCA1IFG & UCTXIFG));
-                UCA1TXBUF = str[i++];
-        }
+        f=1;
+        sprintf(c ,"%d.%d\n", (int)temperatura, (int)(((float)temperatura-(int)temperatura)*100));
     }
     return 0;
 }
@@ -67,4 +43,55 @@ int main(void)
 __interrupt void ADC12_ISR(void) {
     t_read = ADC12MEM0;     //leggi risultato conversione
     flag = 1;               //attiva flag per autorizzare avvio nuova conversione
+}
+
+void setup(void){
+    P4SEL = BIT4 +BIT5; //select peripheral function for P4.4(Tx) and P4.5(Rx)
+    UCA1CTL1 |= UCSWRST; //reset USCI for configuration
+    UCA1CTL1 |= UCSSEL_2; //select clock source (SMCLK)
+    UCA1BR0 = 109; //set baud-rate prescaler
+    UCA1BR1 = 0;
+    UCA1MCTL = UCBRS_2; //set baud-rate modulator
+    UCA1CTL1 &= ~UCSWRST; //enable USCI
+    UCA1IE |= UCTXIE;
+
+    P2DIR=0x00;
+    P2REN=0xFF;
+    P2OUT=0xFF;
+    P2IES &= ~BIT1;
+    P2IE |= BIT1;
+    P2IFG &= ~BIT1;                                 //attivazione dell'interrupt
+
+    REFCTL0 &= ~REFMSTR;                            //disabilita riferimento di tensione da blocco REF
+    ADC12CTL0 = ADC12SHT0_8 + ADC12REFON + ADC12ON; //imposta tempo di sampling, abilita riferimento di tensione interno
+    ADC12CTL1 = ADC12SHP;                           //campionamento basato su timer ADC12
+    ADC12MCTL0 = ADC12SREF_1 + ADC12INCH_10;        //Vref-=0V, Vref+=1.5V, selezione canale analogico 10 (integrated Temp. sensor)
+    ADC12IE = 0x0001;                               //abilita interrupt corrispondente a ADC12IFG0
+    __delay_cycles(100);                            //ritardo per assestamento tensioni di riferimento
+    ADC12CTL0 |= ADC12ENC;                          //abilitazione blocco ADC
+    __enable_interrupt();                           //GIE = 1
+}
+
+#pragma vector=USCI_A1_VECTOR
+__interrupt void USCI_A1_ISR(void){
+    if(f==1){
+        __delay_cycles(5000);
+        while(!(UCA1IFG & UCTXIFG));
+        if(c[i]!='\0'){
+            UCA1TXBUF=c[i];
+            i++;
+        }
+        else{
+            f=0;
+            i=0;
+        }
+    }
+    UCA1TXBUF = UCA1RXBUF;
+}
+
+#pragma vector = PORT2_VECTOR
+__interrupt void Port_2(void) //S1
+{
+
+    P2IFG &= ~BIT1;
 }
