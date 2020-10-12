@@ -58,7 +58,7 @@ if(UCA1RXBUF == 66) //Toggle green LED if "B" RXed
     P4OUT &= ~ BIT7;
     P1OUT |= BIT0;
 }
-if(UCA1RXBUF == 66) //Toggle green LED if "B" RXed
+if(UCA1RXBUF == 67) //Toggle green LED if "B" RXed
 {
     P4OUT &= ~ BIT7;
     P1OUT &= ~ BIT0;
